@@ -1,0 +1,82 @@
+# cairn as a GitLab CI component (#39, ADR-009): one job running the cairn image on the checkout,
+# so behaviour cannot differ between CI systems. Its JUnit report reaches the pipeline's and the
+# merge request's test report; the Markdown summary is an artifact.
+#
+# Each tag cairn-v<version> copies it to templates/cairn.yml in the public repository
+# controlcairn/cairn (packages/cli/release/public.ts, ADR-101), which a pipeline includes by its
+# address at the tag, with no credential:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/controlcairn/cairn/cairn-v<version>/templates/cairn.yml
+#       inputs:
+#         image: <the cairn image>
+#         command: check
+#
+# Every command that reaches ControlCairn, `cairn check` as much as `cairn push` and `cairn pull`,
+# presents the job's own OIDC token from CAIRN_ID_TOKEN, once the project gives each included job
+# one for ControlCairn's address and a trust rule on the workspace admits the project (ADR-060).
+# Each included command is its own job, `cairn-<command>`, so each is given its token:
+#
+#   cairn-check:
+#     id_tokens:
+#       CAIRN_ID_TOKEN:
+#         aud: <the scheme and host of ledger.server>
+#   cairn-push:
+#     id_tokens:
+#       CAIRN_ID_TOKEN:
+#         aud: <the scheme and host of ledger.server>
+#
+# Without it they read CAIRN_TOKEN, a masked CI/CD variable holding the workspace CI token.
+#
+# `command: drift` with `comment: true` keeps the merge request's one drift comment current: a note
+# naming each signed claim merging would demote, edited on every run, and saying so once nothing
+# demotes any more (#145). GitLab's own job token cannot write merge request notes, so the project
+# gives cairn its own: a project or group access token (Settings > Access tokens on the project, or
+# on the group for every project in it) with the Reporter role and the `api` scope, the least scope
+# that writes a note. Store it under Settings > CI/CD > Variables as CAIRN_FORGE_TOKEN,
+# masked, and not protected, so a merge request's pipeline from an unprotected branch can read it.
+# The job must run in a merge request pipeline, which reads the merge request from its own
+# variables, on gitlab.com or a self-managed instance alike:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/controlcairn/cairn/cairn-v<version>/templates/cairn.yml
+#       inputs:
+#         image: <the cairn image>
+#         command: drift
+#         comment: true
+#   workflow:
+#     rules:
+#       - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+spec:
+  inputs:
+    image:
+      description: The cairn image to run.
+    command:
+      description: check, generate, verify, push, pull or drift.
+      default: check
+    root:
+      description: The directory holding cairn.yaml, relative to the checkout.
+      default: '.'
+    stage:
+      default: test
+    junit:
+      description: Where the JUnit report is written, relative to the checkout.
+      default: cairn-junit.xml
+    comment:
+      description: For drift, `true` keeps the merge request's one drift comment current, with CAIRN_FORGE_TOKEN.
+      default: 'false'
+---
+cairn-$[[ inputs.command ]]:
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.image ]]
+    entrypoint: ['']
+  script:
+    - node /opt/cairn/cairn.cjs $[[ inputs.command ]] --root "$[[ inputs.root ]]" --report "junit:$[[ inputs.junit ]]" --report markdown:cairn-summary.md $([ "$[[ inputs.comment ]]" = true ] && echo --comment)
+  artifacts:
+    when: always
+    paths:
+      - $[[ inputs.junit ]]
+      - cairn-summary.md
+    reports:
+      junit: $[[ inputs.junit ]]

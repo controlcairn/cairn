@@ -1,0 +1,105 @@
+# @controlcairn/cli TO npmjs.com, BY TRUSTED PUBLISHING (ControlCairn ADR-101). No npm token
+# exists: npm trusts this workflow, in this repository, by its OIDC identity, and records the
+# package's provenance from it.
+#
+# When the release cairn-v<version> is published, this downloads the package tarball ControlCairn's
+# CI built, judged and attached to it, checks it against the release's SHA256SUMS and that it is
+# @controlcairn/cli at <version>, and publishes that file. Nothing is built here, so what npm
+# serves is the tarball the release lists. Additive: a version npm already holds with this tarball
+# is left as it is, and one it holds with another is refused.
+#
+# The source of this file is ControlCairn's repository (packages/cli/public/), copied here at each
+# tag with the action, the GitLab template, the README and the licence.
+
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  # The OIDC token npm's trusted publishing exchanges for a one-time publish credential.
+  id-token: write
+
+concurrency:
+  group: publish-npm-${{ github.event.release.tag_name }}
+  # A cancelled publish that reached the registry leaves a version published.
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    if: ${{ startsWith(github.event.release.tag_name, 'cairn-v') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      NAME: '@controlcairn/cli'
+    steps:
+      # Trusted publishing needs npm 11.5.1 or later on Node 22.14.0 or later.
+      - name: Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.2
+          registry-url: https://registry.npmjs.org
+      - name: npm, pinned
+        run: npm install --global npm@11.21.2 && npm --version
+
+      - name: Download the tarball, and check it against SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#cairn-v}"
+          TGZ="controlcairn-cli-${VERSION}.tgz"
+          dir="${RUNNER_TEMP}/release"
+          mkdir -p "$dir"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" \
+            --pattern "$TGZ" --pattern SHA256SUMS
+          cd "$dir"
+          grep -qE "^[0-9a-f]{64}  ${TGZ}\$" SHA256SUMS || {
+            echo "::error::SHA256SUMS of ${TAG} does not name ${TGZ}"
+            exit 1
+          }
+          grep -E "^[0-9a-f]{64}  ${TGZ}\$" SHA256SUMS | sha256sum --check --strict
+          tar -xzOf "$TGZ" package/package.json \
+            | jq -e --arg name "$NAME" --arg version "$VERSION" '.name == $name and .version == $version' >/dev/null || {
+            echo "::error::${TGZ} is not ${NAME} ${VERSION}"
+            exit 1
+          }
+          {
+            echo "VERSION=${VERSION}"
+            echo "TGZ=${dir}/${TGZ}"
+            echo "INTEGRITY=sha512-$(openssl dgst -sha512 -binary "$TGZ" | base64 -w0)"
+          } >> "$GITHUB_ENV"
+
+      - name: Publish it, once
+        run: |
+          set -euo pipefail
+          published="$(npm view "${NAME}@${VERSION}" dist.integrity 2>/dev/null || true)"
+          if [ -n "$published" ]; then
+            [ "$published" = "$INTEGRITY" ] || {
+              echo "::error::${NAME}@${VERSION} is already on npmjs.com as another tarball; a published version never moves"
+              exit 1
+            }
+            echo "${NAME}@${VERSION} is already on npmjs.com as this tarball"
+            exit 0
+          fi
+          npm publish "$TGZ" --provenance --access public || {
+            echo "::error::npm refused ${NAME}@${VERSION}. A package npm does not hold yet cannot be published by trusted publishing: its first version is published once by hand, then this workflow is configured as its trusted publisher on npmjs.com (Packages, ${NAME}, Settings, Trusted publishing), with direct npm publish allowed."
+            exit 1
+          }
+
+      - name: Read it back with no credential
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            have="$(NPM_CONFIG_USERCONFIG=/dev/null npm view "${NAME}@${VERSION}" dist.integrity --registry https://registry.npmjs.org/ 2>/dev/null || true)"
+            if [ "$have" = "$INTEGRITY" ]; then
+              echo "${NAME}@${VERSION} installs from npmjs.com with no credential"
+              exit 0
+            fi
+            sleep $((attempt * 10))
+          done
+          echo "::error::${NAME}@${VERSION} does not read back from npmjs.com as the released tarball"
+          exit 1

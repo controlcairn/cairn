@@ -1,0 +1,80 @@
+# cairn for GitHub Actions, Forgejo Actions and Gitea Actions (#39, ADR-009): one composite step
+# that runs the cairn image on the checkout, so behaviour cannot differ between CI systems.
+#
+# Each tag cairn-v<version> copies it, with run.sh, to the root of the public repository
+# controlcairn/cairn (packages/cli/release/public.ts, ADR-101), where a client's CI reads it:
+# `controlcairn/cairn@cairn-v<version>` on GitHub, which takes no address in `uses:`, and
+# `https://github.com/controlcairn/cairn@cairn-v<version>` on Forgejo and Gitea.
+#
+#   - uses: controlcairn/cairn@cairn-v<version>
+#     with:
+#       image: <the cairn image>
+#       command: check
+#       report: |
+#         github
+#         markdown
+#         sarif:cairn.sarif
+#
+# Every command that reaches ControlCairn, `cairn check` as much as `cairn push` and `cairn pull`,
+# presents the job's own OIDC token when the job may ask for one:
+# `permissions: id-token: write` on GitHub, `enable-openid-connect: true` on Forgejo, and a trust
+# rule on the workspace admitting the repository (ADR-060). With neither, they take the workspace CI
+# token as `token`, from the CI system's secrets. `cairn drift` with `comment: true` keeps the pull request's one drift comment current,
+# with `forge-token`, a token that may comment on the pull request (#40). The SARIF file reaches
+# GitHub's code scanning through `github/codeql-action/upload-sarif`.
+name: cairn
+description: Check, generate, verify, push, pull or drift a compliance program kept in this repository, with ControlCairn's cairn.
+inputs:
+  image:
+    description: The cairn image to run.
+    required: true
+  command:
+    description: check, generate, verify, push, pull or drift.
+    required: false
+    default: check
+  root:
+    description: The repository's directory holding cairn.yaml, relative to the checkout.
+    required: false
+    default: '.'
+  config:
+    description: The config, relative to the checkout, when it is not the root's cairn.yaml.
+    required: false
+    default: ''
+  report:
+    description: One `--report <format>[:<path>]` per line; paths are relative to the checkout.
+    required: false
+    default: |
+      github
+      markdown
+  token:
+    description: The workspace CI token, for check, generate, drift, push and pull when the job has no identity token of its own.
+    required: false
+    default: ''
+  comment:
+    description: For drift, `true` keeps the pull request's one drift comment current.
+    required: false
+    default: 'false'
+  forge-token:
+    description: For drift with comment, a token that may comment on the pull request.
+    required: false
+    default: ''
+  docker-args:
+    description: More `docker run` arguments, such as `--network host` for a server on the runner.
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: cairn ${{ inputs.command }}
+      shell: bash
+      env:
+        CAIRN_IMAGE: ${{ inputs.image }}
+        CAIRN_COMMAND: ${{ inputs.command }}
+        CAIRN_ROOT: ${{ inputs.root }}
+        CAIRN_CONFIG: ${{ inputs.config }}
+        CAIRN_REPORT: ${{ inputs.report }}
+        CAIRN_TOKEN: ${{ inputs.token }}
+        CAIRN_COMMENT: ${{ inputs.comment }}
+        CAIRN_FORGE_TOKEN: ${{ inputs.forge-token }}
+        CAIRN_DOCKER_ARGS: ${{ inputs.docker-args }}
+      run: bash "${{ github.action_path }}/run.sh"
