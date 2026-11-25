@@ -31,7 +31,8 @@ jobs:
   npm:
     if: ${{ startsWith(github.event.release.tag_name, 'cairn-v') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # The read-back alone may wait 15 minutes, and the steps before it take a few.
+    timeout-minutes: 30
     env:
       TAG: ${{ github.event.release.tag_name }}
       NAME: '@controlcairn/cli'
@@ -90,16 +91,23 @@ jobs:
             exit 1
           }
 
+      # npm serves a version it has just published minutes later: 0.9.0 took about five. So this
+      # checks every 30 s for 15 minutes before it calls the release unserved (#308).
       - name: Read it back with no credential
+        timeout-minutes: 20
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4 5 6; do
+          interval=30
+          checks=$((15 * 60 / interval))
+          for attempt in $(seq 0 "$checks"); do
             have="$(NPM_CONFIG_USERCONFIG=/dev/null npm view "${NAME}@${VERSION}" dist.integrity --registry https://registry.npmjs.org/ 2>/dev/null || true)"
             if [ "$have" = "$INTEGRITY" ]; then
               echo "${NAME}@${VERSION} installs from npmjs.com with no credential"
               exit 0
             fi
-            sleep $((attempt * 10))
+            [ "$attempt" -lt "$checks" ] || break
+            echo "Waiting for npmjs.com to serve ${NAME}@${VERSION} as the released tarball: check $((attempt + 1)) of $((checks + 1)), the next in ${interval} s"
+            sleep "$interval"
           done
-          echo "::error::${NAME}@${VERSION} does not read back from npmjs.com as the released tarball"
+          echo "::error::npmjs.com does not serve ${NAME}@${VERSION} as the released tarball after 15 minutes"
           exit 1
