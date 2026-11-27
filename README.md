@@ -5,7 +5,7 @@ against [ControlCairn](https://github.com/controlcairn). This repository holds c
 cairn action for GitHub, Forgejo and Gitea Actions, and the cairn template for GitLab CI. Nothing
 here needs a login or a token to download.
 
-This README is cairn 0.9.2's. Your workspace's **Connect your repository** panel in ControlCairn
+This README is cairn 0.9.3's. Your workspace's **Connect your repository** panel in ControlCairn
 writes the `cairn.yaml` and the CI job for your repository, filled in; the examples below are the
 same jobs, by hand.
 
@@ -14,7 +14,7 @@ same jobs, by hand.
 From npm, with Node 24 or later:
 
 ```bash
-npm install --global @controlcairn/cli@0.9.2
+npm install --global @controlcairn/cli@0.9.3
 cairn login
 cairn check
 ```
@@ -22,16 +22,16 @@ cairn check
 As a container image, with nothing to install:
 
 ```bash
-docker run --rm --volume "$PWD:/repo" --workdir /repo ghcr.io/controlcairn/cairn:0.9.2 verify
+docker run --rm --volume "$PWD:/repo" --workdir /repo ghcr.io/controlcairn/cairn:0.9.3 verify
 ```
 
 As one file, with no Node: download the file for your platform from the
-[cairn-v0.9.2 release](https://github.com/controlcairn/cairn/releases/tag/cairn-v0.9.2),
+[cairn-v0.9.3 release](https://github.com/controlcairn/cairn/releases/tag/cairn-v0.9.3),
 check it against the release's `SHA256SUMS`, and run it.
 
 ```bash
-curl -fsSLO https://github.com/controlcairn/cairn/releases/download/cairn-v0.9.2/cairn-linux-x64
-curl -fsSLO https://github.com/controlcairn/cairn/releases/download/cairn-v0.9.2/SHA256SUMS
+curl -fsSLO https://github.com/controlcairn/cairn/releases/download/cairn-v0.9.3/cairn-linux-x64
+curl -fsSLO https://github.com/controlcairn/cairn/releases/download/cairn-v0.9.3/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 chmod +x cairn-linux-x64 && ./cairn-linux-x64 --help
 ```
@@ -56,14 +56,14 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: controlcairn/cairn@cairn-v0.9.2
+      - uses: controlcairn/cairn@cairn-v0.9.3
         with:
-          image: ghcr.io/controlcairn/cairn:0.9.2
+          image: ghcr.io/controlcairn/cairn:0.9.3
           command: check
       - if: github.event_name == 'push'
-        uses: controlcairn/cairn@cairn-v0.9.2
+        uses: controlcairn/cairn@cairn-v0.9.3
         with:
-          image: ghcr.io/controlcairn/cairn:0.9.2
+          image: ghcr.io/controlcairn/cairn:0.9.3
           command: push
 ```
 
@@ -88,9 +88,9 @@ jobs:
     enable-openid-connect: true
     steps:
       - uses: https://data.forgejo.org/actions/checkout@v4
-      - uses: https://github.com/controlcairn/cairn@cairn-v0.9.2
+      - uses: https://github.com/controlcairn/cairn@cairn-v0.9.3
         with:
-          image: ghcr.io/controlcairn/cairn:0.9.2
+          image: ghcr.io/controlcairn/cairn:0.9.3
           command: check
 ```
 
@@ -101,9 +101,9 @@ The template, included from this repository at the release:
 ```yaml
 # .gitlab-ci.yml
 include:
-  - remote: https://raw.githubusercontent.com/controlcairn/cairn/cairn-v0.9.2/templates/cairn.yml
+  - remote: https://raw.githubusercontent.com/controlcairn/cairn/cairn-v0.9.3/templates/cairn.yml
     inputs:
-      image: ghcr.io/controlcairn/cairn:0.9.2
+      image: ghcr.io/controlcairn/cairn:0.9.3
       command: check
 cairn-check:
   id_tokens:

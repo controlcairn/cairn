@@ -30,7 +30,7 @@ concurrency:
 jobs:
   npm:
     if: ${{ startsWith(github.event.release.tag_name, 'cairn-v') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The read-back alone may wait 15 minutes, and the steps before it take a few.
     timeout-minutes: 30
     env:
